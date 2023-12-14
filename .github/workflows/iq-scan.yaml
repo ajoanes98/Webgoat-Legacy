@@ -25,7 +25,7 @@ jobs:
         node-version: 16
         cache: 'npm'
 
-    - run: npm config set registry https://iq.ajoanes.ngrok.io/ --auth-type=oauth
+    - run: npm config set registry https://repo.ajoanes.ngrok.io/repository/npm-group/ --auth-type=oauth
       env:
         NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
     - run: npm ci
