@@ -1,0 +1,34 @@
+on:
+  repository_dispatch:
+    types: [process-issues.yml]
+
+jobs:
+  process-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch GitHub Issues for Service
+        id: fetch_issues
+        run: |
+          ISSUES=$(gh api \
+            "repos/${{ github.repository }}/issues" \
+            --field state="${{ github.event.client_payload.issue_filters.state }}" \
+            --jq '[.[] | {id: .number, title: .title, state: .state, labels: [.labels[].name], url: .html_url, assignee: .assignee.login, created_at: .created_at}]')
+          echo "issues=$ISSUES" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Process issues (your logic here)
+        run: |
+          echo "Service: ${{ github.event.client_payload.service_title }}"
+          echo "Issues: ${{ steps.fetch_issues.outputs.issues }}"
+          # Add your processing logic here
+
+      - name: Update Port run status
+        if: always()
+        run: |
+          curl -X PATCH https://api.port.io/v1/actions/runs/${{ github.event.client_payload.run_id }} \
+            -H "Authorization: Bearer $PORT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"status": "${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}", "message": {"run_status": "Workflow completed"}}'
+        env:
+          PORT_TOKEN: ${{ secrets.PORT_TOKEN }}
