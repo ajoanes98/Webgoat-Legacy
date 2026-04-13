@@ -1,34 +1,80 @@
+name: List GitHub Issues
+
 on:
-  repository_dispatch:
-    types: [process-issues.yml]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Port Run ID'
+        required: true
+      service_identifier:
+        description: 'Port Service identifier'
+        required: true
+      service_title:
+        description: 'Port Service title'
+        required: false
+      repo:
+        description: 'GitHub repo in owner/repo format'
+        required: true
+      state:
+        description: 'Issue state: open, closed, or all'
+        required: false
+        default: 'open'
+      port_payload:
+        description: 'Full Port context payload (JSON)'
+        required: false
 
 jobs:
-  process-issues:
+  list-issues:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch GitHub Issues for Service
+      - name: Fetch GitHub Issues
         id: fetch_issues
-        run: |
-          ISSUES=$(gh api \
-            "repos/${{ github.repository }}/issues" \
-            --field state="${{ github.event.client_payload.issue_filters.state }}" \
-            --jq '[.[] | {id: .number, title: .title, state: .state, labels: [.labels[].name], url: .html_url, assignee: .assignee.login, created_at: .created_at}]')
-          echo "issues=$ISSUES" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Process issues (your logic here)
         run: |
-          echo "Service: ${{ github.event.client_payload.service_title }}"
-          echo "Issues: ${{ steps.fetch_issues.outputs.issues }}"
-          # Add your processing logic here
+          REPO="${{ github.event.inputs.repo }}"
+          STATE="${{ github.event.inputs.state }}"
 
-      - name: Update Port run status
-        if: always()
+          ISSUES=$(gh api \
+            "/repos/${REPO}/issues?state=${STATE}&per_page=100" \
+            --jq '[.[] | select(.pull_request == null) | {
+              number: .number,
+              title: .title,
+              state: .state,
+              url: .html_url,
+              labels: [.labels[].name],
+              assignee: .assignee.login,
+              created_at: .created_at,
+              updated_at: .updated_at,
+              body: .body
+            }]')
+
+          echo "issues<<EOF" >> $GITHUB_OUTPUT
+          echo "$ISSUES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Report success to Port
+        if: success()
         run: |
-          curl -X PATCH https://api.port.io/v1/actions/runs/${{ github.event.client_payload.run_id }} \
-            -H "Authorization: Bearer $PORT_TOKEN" \
+          curl -s -X PATCH \
+            "https://api.port.io/v1/actions/runs/${{ github.event.inputs.run_id }}" \
+            -H "Authorization: Bearer ${{ secrets.PORT_ACCESS_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"status": "${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}", "message": {"run_status": "Workflow completed"}}'
-        env:
-          PORT_TOKEN: ${{ secrets.PORT_TOKEN }}
+            -d '{
+              "status": "SUCCESS",
+              "message": {
+                "issues": ${{ steps.fetch_issues.outputs.issues }},
+                "service": "${{ github.event.inputs.service_title }}",
+                "repo": "${{ github.event.inputs.repo }}",
+                "state": "${{ github.event.inputs.state }}"
+              }
+            }'
+
+      - name: Report failure to Port
+        if: failure()
+        run: |
+          curl -s -X PATCH \
+            "https://api.port.io/v1/actions/runs/${{ github.event.inputs.run_id }}" \
+            -H "Authorization: Bearer ${{ secrets.PORT_ACCESS_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"status": "FAILURE", "message": {"run_status": "Failed to fetch issues"}}'
