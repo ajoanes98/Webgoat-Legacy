@@ -1,0 +1,12 @@
+{
+  "_comment": "FAKE demo secrets for Port testing — NOT REAL",
+  "github": {
+    "token": "gho_TESTFAKExxxxxxxxxxxxxxxxxxxxxxxxxx0000"
+  },
+  "sendgrid": {
+    "api_key": "SG.TESTFAKE000000000000000000000000000000000000000000000000000000"
+  },
+  "twilio": {
+    "auth_token": "TESTFAKE00000000000000000000000000"
+  }
+}
